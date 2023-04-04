@@ -41,6 +41,9 @@ def get_args():
                         help="user config for user LoadGen settings such as target QPS")
     parser.add_argument("--max_examples", type=int,
                         help="Maximum number of examples to consider (not limited by default)")
+    parser.add_argument("--batch_size", type=int, help="Batch size", required=True)
+    parser.add_argument("--tpu", action="store_true", help="Run model on TPU")
+    parser.add_argument("--saved_model_path", type=str, help="Model path", required=True)
     args = parser.parse_args()
     return args
 
@@ -81,6 +84,7 @@ def main():
     settings.scenario = scenario_map[args.scenario]
     settings.FromConfig(args.mlperf_conf, "bert", args.scenario)
     settings.FromConfig(args.user_conf, "bert", args.scenario)
+    settings.multi_stream_samples_per_query = args.batch_size
 
     if args.accuracy:
         settings.mode = lg.TestMode.AccuracyOnly
