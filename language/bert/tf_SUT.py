@@ -69,12 +69,15 @@ class BERT_TF_SUT():
                         OUTPUT_SAVED_MODEL_DIR)        
         #'''
         #'''
-        batch_size = args.batch_size
-        print("Batch size: ", batch_size)
+        if args.batch_size:
+            self.batch_size = args.batch_size
+        else:
+            self.batch_size = 1
+        print("Batch size: ", self.batch_size)
         # warmup
-        input_ids   = np.array([[0]*384]* batch_size)
-        input_mask  = np.array([[1]*384]* batch_size)
-        segment_ids = np.array([[0, 1]*192]*batch_size)
+        input_ids   = np.array([[0]*384]* self.batch_size)
+        input_mask  = np.array([[1]*384]* self.batch_size)
+        segment_ids = np.array([[0, 1]*192]*self.batch_size)
 
         feeds = {
             'input_ids:0':   input_ids,
@@ -82,7 +85,7 @@ class BERT_TF_SUT():
             'segment_ids:0': segment_ids
         }
         warmup_res = self.sess.run(["logits:0"], feed_dict=feeds)
-        print(warmup_res)
+        #print(warmup_res)
         #'''
         print("Constructing SUT...")
         self.sut = lg.ConstructSUT(self.issue_queries, self.flush_queries)
@@ -91,11 +94,12 @@ class BERT_TF_SUT():
         self.qsl = get_squad_QSL(args.max_examples)
 
     def issue_queries(self, query_samples):
-        #print("!!!!", len(query_samples))
-        all_input_ids = []
+        print("!!!!", len(query_samples))
+        """
+	all_input_ids = []
         all_input_masks = []
         all_segment_ids = []
-        
+
         # loop through samples individually
         for i in range(len(query_samples)):
             eval_features = self.qsl.get_features(query_samples[i].index)
@@ -104,22 +108,6 @@ class BERT_TF_SUT():
             segment_ids = np.array([eval_features.segment_ids])
             all_input_ids.append(input_ids)
             all_input_masks.append(input_mask)
-            all_segment_ids.append(segment_ids)
-            '''
-            feeds = {
-                'input_ids:0':   input_ids,
-                'input_mask:0':  input_mask,
-                'segment_ids:0': segment_ids
-            }
-            result = self.sess.run(["logits:0"], feed_dict=feeds)
-
-            logits = [float(x) for x in result[0].flat]
-            response_array = array.array("B", np.array(logits).astype(np.float32).tobytes())
-            bi = response_array.buffer_info()
-            response = lg.QuerySampleResponse(query_samples[i].id, bi[0], bi[1])
-            lg.QuerySamplesComplete([response])
-            '''
-        #'''
         # batch predict
         all_feeds = {
             'input_ids:0':   np.vstack(all_input_ids),
@@ -127,8 +115,9 @@ class BERT_TF_SUT():
             'segment_ids:0': np.vstack(all_segment_ids)
         }
         s = time.time()
+        #with tf.profiler.experimental.Profile('bert_profile'):
         batch_result = self.sess.run(["logits:0"], feed_dict=all_feeds)
-        print((time.time() - s) * 1000,  "ms")
+        #print((time.time() - s) * 1000,  "ms")
         responses = []
         for i in range(len(query_samples)):
             result = batch_result[0][i]
@@ -140,6 +129,47 @@ class BERT_TF_SUT():
             #lg.QuerySamplesComplete([response])
         lg.QuerySamplesComplete(responses)
         #'''
+	
+        """
+        idx = 0
+        while idx < len(query_samples):
+            
+            all_input_ids = []
+            all_input_masks = []
+            all_segment_ids = []
+
+            # loop through samples individually
+            for id in range(idx, min(idx + self.batch_size, len(query_samples))):
+                #print("id: ", id)
+                eval_features = self.qsl.get_features(query_samples[id].index)
+                input_ids   = np.array([eval_features.input_ids])
+                input_mask  = np.array([eval_features.input_mask])
+                segment_ids = np.array([eval_features.segment_ids])
+                all_input_ids.append(input_ids)
+                all_input_masks.append(input_mask)
+                all_segment_ids.append(segment_ids)
+            all_feeds = {
+                'input_ids:0':   np.vstack(all_input_ids),
+                'input_mask:0':  np.vstack(all_input_masks),
+                'segment_ids:0': np.vstack(all_segment_ids)
+            }
+            s = time.time()
+            batch_result = self.sess.run(["logits:0"], feed_dict=all_feeds)
+            responses = []
+            for i, id in zip(range(0, self.batch_size), range(idx, min(idx + self.batch_size, len(query_samples)))):
+                #print(i, id)
+                result = batch_result[0][i]
+                logits = [float(x) for x in result[0].flat]
+                response_array = array.array("B", np.array(logits).astype(np.float32).tobytes())
+                bi = response_array.buffer_info()
+                response = lg.QuerySampleResponse(query_samples[id].id, bi[0], bi[1])
+                responses.append(response)
+            lg.QuerySamplesComplete(responses)
+
+
+            idx = idx + self.batch_size
+            #print("idx: ", idx)
+
 
     def flush_queries(self):
         pass
