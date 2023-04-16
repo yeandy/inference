@@ -178,15 +178,15 @@ class BERT_TF_SUT():
             elif self.args.tpu_v2:
                 if self.args.quant_inputs:
                     all_feeds = {
-                        'input_ids':   tf.convert_to_tensor(input_ids, dtype=tf.int64),
-                        'attention_mask':  tf.convert_to_tensor(input_mask, dtype=tf.int64),
-                        'token_type_ids': tf.convert_to_tensor(segment_ids, dtype=tf.int64)
+                        'input_ids':   tf.convert_to_tensor(np.vstack(all_input_ids), dtype=tf.int64),
+                        'attention_mask':  tf.convert_to_tensor(np.vstack(all_input_masks), dtype=tf.int64),
+                        'token_type_ids': tf.convert_to_tensor(np.vstack(all_segment_ids), dtype=tf.int64)
                     }
                 else:
                     all_feeds = {
-                        'input_ids':   tf.convert_to_tensor(input_ids, dtype=tf.int64),
-                        'input_mask':  tf.convert_to_tensor(input_mask, dtype=tf.int64),
-                        'segment_ids': tf.convert_to_tensor(segment_ids, dtype=tf.int64)
+                        'input_ids':   tf.convert_to_tensor(np.vstack(all_input_ids), dtype=tf.int64),
+                        'input_mask':  tf.convert_to_tensor(np.vstack(all_input_masks), dtype=tf.int64),
+                        'segment_ids': tf.convert_to_tensor(np.vstack(all_segment_ids), dtype=tf.int64)
                     }
             s = time.time()
             if self.args.tpu:
@@ -199,8 +199,10 @@ class BERT_TF_SUT():
                 batch_result = np.stack([batch_result['start_logits'], batch_result['end_logits']], axis=-1)
             responses = []
             for i, id in zip(range(0, self.batch_size), range(idx, min(idx + self.batch_size, len(query_samples)))):
-                #print(i, id)
-                result = batch_result[0][i]
+                if self.args.quant_inputs:
+                    result = batch_result[i]
+                else:
+                    result = batch_result[0][i]
                 logits = [float(x) for x in result[0].flat]
                 response_array = array.array("B", np.array(logits).astype(np.float32).tobytes())
                 bi = response_array.buffer_info()
@@ -208,9 +210,7 @@ class BERT_TF_SUT():
                 responses.append(response)
             lg.QuerySamplesComplete(responses)
 
-
             idx = idx + self.batch_size
-            #print("idx: ", idx)
 
 
     def flush_queries(self):
