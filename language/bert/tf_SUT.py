@@ -30,10 +30,11 @@ from squad_QSL import get_squad_QSL
 
 class BERT_TF_SUT():
     def __init__(self, args):
-        if args.tpu:
+        if args.tpu or args.tpu_v2:
             resolver = tf.distribute.cluster_resolver.TPUClusterResolver('local')
             tf.config.experimental_connect_to_cluster(resolver)
             tf.tpu.experimental.initialize_tpu_system(resolver)
+ 
         print("Loading TF model...")
         '''
         infer_config = tf.compat.v1.ConfigProto()
@@ -51,19 +52,24 @@ class BERT_TF_SUT():
             tf.import_graph_def(graph_def, name='')
         '''
         #'''
-        #OUTPUT_SAVED_MODEL_DIR='/home/yeandy/saved_model'
-        #OUTPUT_SAVED_MODEL_DIR='/home/yeandy/saved_model-srq-tpu-converted'
         OUTPUT_SAVED_MODEL_DIR = args.saved_model_path
-        graph = tf.compat.v1.Graph()
-        self.sess = tf.compat.v1.Session(graph=graph)#,config=infer_config)
-        with graph.as_default():
-            # Prepare input and outputs of model
-            if args.tpu:
+        # Prepare input and outputs of model
+        if args.tpu:
+            graph = tf.compat.v1.Graph()
+            self.sess = tf.compat.v1.Session(graph=graph)#,config=infer_config)
+            with graph.as_default():
                 tf.compat.v1.saved_model.loader.load(self.sess,
                                 [tf.compat.v1.saved_model.tag_constants.SERVING, tf.compat.v1.saved_model.tag_constants.TPU],
                                 OUTPUT_SAVED_MODEL_DIR)
                 tf.compat.v1.tpu.initialize_system()
-            else:
+        elif args.tpu_v2:
+            with tf.device('/TPU:0'):
+                self.model = tf.saved_model.load(export_dir=OUTPUT_SAVED_MODEL_DIR, tags=['serve'])
+                self.inference_func = self.model.signatures['serving_default']
+        else:
+            graph = tf.compat.v1.Graph()
+            self.sess = tf.compat.v1.Session(graph=graph)#,config=infer_config)
+            with graph.as_default():
                 tf.compat.v1.saved_model.loader.load(self.sess,
                         [tf.compat.v1.saved_model.tag_constants.SERVING],
                         OUTPUT_SAVED_MODEL_DIR)        
@@ -78,19 +84,34 @@ class BERT_TF_SUT():
         input_ids   = np.array([[0]*384]* self.batch_size)
         input_mask  = np.array([[1]*384]* self.batch_size)
         segment_ids = np.array([[0, 1]*192]*self.batch_size)
-
-        feeds = {
+        if args.tpu:
+            feeds = {
             'input_ids:0':   input_ids,
             'input_mask:0':  input_mask,
             'segment_ids:0': segment_ids
-        }
-        warmup_res = self.sess.run(["logits:0"], feed_dict=feeds)
+            }
+            warmup_res = self.sess.run(["logits:0"], feed_dict=feeds)
+        elif args.tpu_v2:
+            if args.quant_inputs:
+                feeds = {
+                    'input_ids':   tf.convert_to_tensor(input_ids, dtype=tf.int64),
+                    'attention_mask':  tf.convert_to_tensor(input_mask, dtype=tf.int64),
+                    'token_type_ids': tf.convert_to_tensor(segment_ids, dtype=tf.int64)
+                }
+            else:
+                feeds = {
+                    'input_ids':   tf.convert_to_tensor(input_ids, dtype=tf.int64),
+                    'input_mask':  tf.convert_to_tensor(input_mask, dtype=tf.int64),
+                    'segment_ids': tf.convert_to_tensor(segment_ids, dtype=tf.int64)
+                }
+            with tf.device('/TPU:0'):
+                warmup_res = self.inference_func(**feeds)
         #print(warmup_res)
         #'''
         print("Constructing SUT...")
         self.sut = lg.ConstructSUT(self.issue_queries, self.flush_queries)
         print("Finished constructing SUT.")
-
+        self.args = args
         self.qsl = get_squad_QSL(args.max_examples)
 
     def issue_queries(self, query_samples):
@@ -148,13 +169,34 @@ class BERT_TF_SUT():
                 all_input_ids.append(input_ids)
                 all_input_masks.append(input_mask)
                 all_segment_ids.append(segment_ids)
-            all_feeds = {
+            if self.args.tpu:
+                all_feeds = {
                 'input_ids:0':   np.vstack(all_input_ids),
                 'input_mask:0':  np.vstack(all_input_masks),
                 'segment_ids:0': np.vstack(all_segment_ids)
-            }
+                }
+            elif self.args.tpu_v2:
+                if self.args.quant_inputs:
+                    all_feeds = {
+                        'input_ids':   tf.convert_to_tensor(input_ids, dtype=tf.int64),
+                        'attention_mask':  tf.convert_to_tensor(input_mask, dtype=tf.int64),
+                        'token_type_ids': tf.convert_to_tensor(segment_ids, dtype=tf.int64)
+                    }
+                else:
+                    all_feeds = {
+                        'input_ids':   tf.convert_to_tensor(input_ids, dtype=tf.int64),
+                        'input_mask':  tf.convert_to_tensor(input_mask, dtype=tf.int64),
+                        'segment_ids': tf.convert_to_tensor(segment_ids, dtype=tf.int64)
+                    }
             s = time.time()
-            batch_result = self.sess.run(["logits:0"], feed_dict=all_feeds)
+            if self.args.tpu:
+                batch_result = self.sess.run(["logits:0"], feed_dict=all_feeds)
+            elif self.args.tpu_v2:
+                with tf.device('/TPU:0'):
+                    batch_result = self.inference_func(**all_feeds)
+            
+            if self.args.quant_inputs:
+                batch_result = np.stack([batch_result['start_logits'], batch_result['end_logits']], axis=-1)
             responses = []
             for i, id in zip(range(0, self.batch_size), range(idx, min(idx + self.batch_size, len(query_samples)))):
                 #print(i, id)

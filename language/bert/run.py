@@ -43,6 +43,8 @@ def get_args():
                         help="Maximum number of examples to consider (not limited by default)")
     parser.add_argument("--batch_size", type=int, help="Batch size")
     parser.add_argument("--tpu", action="store_true", help="Run model on TPU")
+    parser.add_argument("--tpu_v2", action="store_true", help="Run model on TPU with manual device placement")
+    parser.add_argument("--quant_inputs", action="store_true", help="If inputs keys are input_ds, attention_mask, token_type_ids from quant model, instead of input_ids, input_mask, segment_ids")
     parser.add_argument("--saved_model_path", type=str, help="Model path", required=True)
     args = parser.parse_args()
     return args
