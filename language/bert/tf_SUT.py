@@ -85,11 +85,18 @@ class BERT_TF_SUT():
         input_mask  = np.array([[1]*384]* self.batch_size)
         segment_ids = np.array([[0, 1]*192]*self.batch_size)
         if args.tpu:
-            feeds = {
-            'input_ids:0':   input_ids,
-            'input_mask:0':  input_mask,
-            'segment_ids:0': segment_ids
-            }
+            if args.quant_inputs:
+                feeds = {
+                    'input_ids:0':   input_ids,
+                    'attention_mask:0':  input_mask,
+                    'token_type_ids:0': segment_ids
+                }
+            else:
+                feeds = {
+                    'input_ids:0':   input_ids,
+                    'input_mask:0':  input_mask,
+                    'segment_ids:0': segment_ids
+                }
             warmup_res = self.sess.run(["logits:0"], feed_dict=feeds)
         elif args.tpu_v2:
             if args.quant_inputs:
@@ -170,11 +177,18 @@ class BERT_TF_SUT():
                 all_input_masks.append(input_mask)
                 all_segment_ids.append(segment_ids)
             if self.args.tpu:
-                all_feeds = {
-                'input_ids:0':   np.vstack(all_input_ids),
-                'input_mask:0':  np.vstack(all_input_masks),
-                'segment_ids:0': np.vstack(all_segment_ids)
-                }
+                if self.args.quant_inputs:
+                    all_feeds = {
+                        'input_ids:0':   np.vstack(all_input_ids),
+                        'attention_mask:0':  np.vstack(all_input_masks),
+                        'token_type_ids:0': np.vstack(all_segment_ids)
+		    }
+                else:
+                    all_feeds = {
+                        'input_ids:0':   np.vstack(all_input_ids),
+                        'input_mask:0':  np.vstack(all_input_masks),
+                        'segment_ids:0': np.vstack(all_segment_ids)
+                    }
             elif self.args.tpu_v2:
                 if self.args.quant_inputs:
                     all_feeds = {
