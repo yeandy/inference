@@ -87,9 +87,9 @@ class BERT_TF_SUT():
         if args.tpu:
             if args.quant_inputs:
                 feeds = {
-                    'input_ids:0':   input_ids,
-                    'attention_mask:0':  input_mask,
-                    'token_type_ids:0': segment_ids
+                    'serving_default_input_ids:0':   input_ids,
+                    'serving_default_attention_mask:0':  input_mask,
+                    'serving_default_token_type_ids:0': segment_ids
                 }
             else:
                 feeds = {
@@ -97,7 +97,8 @@ class BERT_TF_SUT():
                     'input_mask:0':  input_mask,
                     'segment_ids:0': segment_ids
                 }
-            warmup_res = self.sess.run(["logits:0"], feed_dict=feeds)
+            warmup_res = self.sess.run(["PartitionedCall:0", "PartitionedCall:1"], feed_dict=feeds)
+            print("A", warmup_res)
         elif args.tpu_v2:
             if args.quant_inputs:
                 feeds = {
@@ -113,6 +114,7 @@ class BERT_TF_SUT():
                 }
             with tf.device('/TPU:0'):
                 warmup_res = self.inference_func(**feeds)
+                print(warmup_res)
         #print(warmup_res)
         #'''
         print("Constructing SUT...")
@@ -160,6 +162,7 @@ class BERT_TF_SUT():
 	
         """
         idx = 0
+        tf.profiler.experimental.start(f'bert_profile_batch_size_{self.batch_size}')
         while idx < len(query_samples):
             
             all_input_ids = []
@@ -179,9 +182,9 @@ class BERT_TF_SUT():
             if self.args.tpu:
                 if self.args.quant_inputs:
                     all_feeds = {
-                        'input_ids:0':   np.vstack(all_input_ids),
-                        'attention_mask:0':  np.vstack(all_input_masks),
-                        'token_type_ids:0': np.vstack(all_segment_ids)
+                        'serving_default_input_ids:0':   np.vstack(all_input_ids),
+                        'serving_default_attention_mask:0':  np.vstack(all_input_masks),
+                        'serving_default_token_type_ids:0': np.vstack(all_segment_ids)
 		    }
                 else:
                     all_feeds = {
@@ -204,13 +207,18 @@ class BERT_TF_SUT():
                     }
             s = time.time()
             if self.args.tpu:
-                batch_result = self.sess.run(["logits:0"], feed_dict=all_feeds)
+                batch_result = self.sess.run(["PartitionedCall:0", "PartitionedCall:1"], feed_dict=all_feeds)
             elif self.args.tpu_v2:
                 with tf.device('/TPU:0'):
                     batch_result = self.inference_func(**all_feeds)
             
             if self.args.quant_inputs:
-                batch_result = np.stack([batch_result['start_logits'], batch_result['end_logits']], axis=-1)
+                #batch_result = np.stack([batch_result['output_0'], batch_result['output_1']], axis=-1)
+                if self.args.tpu:
+                    batch_result = np.stack([batch_result[0], batch_result[1]], axis=-1)
+                else:
+                    batch_result = np.stack([batch_result['start_logits'], batch_result['end_logits']], axis=-1)
+                
             responses = []
             for i, id in zip(range(0, self.batch_size), range(idx, min(idx + self.batch_size, len(query_samples)))):
                 if self.args.quant_inputs:
@@ -225,7 +233,7 @@ class BERT_TF_SUT():
             lg.QuerySamplesComplete(responses)
 
             idx = idx + self.batch_size
-
+        tf.profiler.experimental.stop()
 
     def flush_queries(self):
         pass
