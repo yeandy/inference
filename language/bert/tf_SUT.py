@@ -91,13 +91,14 @@ class BERT_TF_SUT():
                     'serving_default_attention_mask:0':  input_mask,
                     'serving_default_token_type_ids:0': segment_ids
                 }
+                warmup_res = self.sess.run(["PartitionedCall:0", "PartitionedCall:1"], feed_dict=feeds)
             else:
                 feeds = {
                     'input_ids:0':   input_ids,
                     'input_mask:0':  input_mask,
                     'segment_ids:0': segment_ids
                 }
-            warmup_res = self.sess.run(["PartitionedCall:0", "PartitionedCall:1"], feed_dict=feeds)
+                warmup_res = self.sess.run(["logits:0"], feed_dict=feeds)
             print("A", warmup_res)
         elif args.tpu_v2:
             if args.quant_inputs:
@@ -207,7 +208,10 @@ class BERT_TF_SUT():
                     }
             s = time.time()
             if self.args.tpu:
-                batch_result = self.sess.run(["PartitionedCall:0", "PartitionedCall:1"], feed_dict=all_feeds)
+                if self.args.quant_inputs:
+                    batch_result = self.sess.run(["PartitionedCall:0", "PartitionedCall:1"], feed_dict=all_feeds)
+                else:
+                    batch_result = self.sess.run(["logits:0"], feed_dict=all_feeds)
             elif self.args.tpu_v2:
                 with tf.device('/TPU:0'):
                     batch_result = self.inference_func(**all_feeds)
