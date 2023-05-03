@@ -61,7 +61,7 @@ def save_model(fname, sess, graph=None):
     'fold_old_batch_norms',
   ]
   graph_def = TransformGraph(graph_def, input_nodes, output_nodes, transforms)
-  save("build/data/bert_tf_v1_1_large_fp32_384_v2/model_one_hot_true_bfloat16_final.pb", graph_def)
+  save("build/data/bert_tf_v1_1_large_fp32_384_v2/model_one_hot_false_bfloat16_final_initializer.pb", graph_def)
 
 def create_model(bert_config, is_training, input_ids, input_mask, segment_ids, use_one_hot_embeddings):
     """Creates a classification model."""
@@ -129,7 +129,7 @@ def main():
         input_ids=input_ids,
         input_mask=input_mask,
         segment_ids=segment_ids,
-        use_one_hot_embeddings=True)
+        use_one_hot_embeddings=False)
     
     # one time operation to recreate bf16 checkpoint
     """ 
