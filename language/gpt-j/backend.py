@@ -40,7 +40,7 @@ class SUT_base():
         self.model = AutoModelForCausalLM.from_pretrained(self.model_path,device_map="auto",low_cpu_mem_usage=True, torch_dtype=self.amp_dtype)
 
         self.model.eval()
-        self.model = self.model.to(memory_format=torch.channels_last)
+        self.model = self.model.to(memory_format=torch.channels_last).to('cuda')
        
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.model_name,
@@ -83,13 +83,14 @@ class SUT_base():
     def inference_call(self,input_ids_tensor,input_masks_tensor):
         ''' Common for all scenarios '''
 
-        with torch.inference_mode(), torch.autocast(device_type='cpu', enabled=self.amp_enabled, dtype=self.amp_dtype if self.amp_enabled else None):
+        s = time.time()
+        with torch.inference_mode(), torch.autocast(device_type='cuda', enabled=self.amp_enabled, dtype=self.amp_dtype if self.amp_enabled else None):
 
 
             input_batch = dict()
-            input_batch['input_ids'] = input_ids_tensor
-            input_batch['attention_mask'] = input_masks_tensor
-           
+            input_batch['input_ids'] = input_ids_tensor.to('cuda')
+            input_batch['attention_mask'] = input_masks_tensor.to('cuda')
+            print(self.model.device, input_ids_tensor.device) 
             output_batch = self.model.generate(**input_batch, **gen_kwargs,pad_token_id=self.tokenizer.eos_token_id)
 
             input_batch_lengths = [x.shape[0] for x in input_batch["input_ids"]]
@@ -104,7 +105,7 @@ class SUT_base():
 
             output_batch_truncated = torch.stack(output_batch_truncated)
 
-        
+        print("time:", time.time()-s)
         return output_batch_truncated
 
     def flush_queries(self):
@@ -148,11 +149,12 @@ class SUT_SingleStream(SUT_base):
         self.sut = lg.ConstructSUT(self.issue_queries, self.flush_queries)
         self.total_samples_done = 0
     def issue_queries(self,query_samples):
-
+        print(len(query_samples))
         index = query_samples[0].index
         input_ids_tensor = self.data_object.source_encoded_input_ids[index]
         input_masks_tensor = self.data_object.source_encoded_attn_masks[index]
-
+        print(input_ids_tensor.shape)
+        print(input_masks_tensor.shape)
         pred_output_batch = self.inference_call(input_ids_tensor,input_masks_tensor).cpu().numpy()
 
         response_array = array.array("B", pred_output_batch.tobytes())
