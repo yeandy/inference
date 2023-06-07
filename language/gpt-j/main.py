@@ -33,7 +33,7 @@ def get_args():
                         help="user config for user LoadGen settings such as target QPS")
     parser.add_argument("--max_examples", type=int, default=13368,
                         help="Maximum number of examples to consider (not limited by default)")
-	parser.add_argument("--jax_do_init", action="store_true", help="If True, initialize model's weights automatically")
+    parser.add_argument("--jax_do_init", action="store_true", help="If True, initialize model's weights automatically")
     args = parser.parse_args()
     return args
 

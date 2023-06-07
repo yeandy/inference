@@ -4,6 +4,8 @@ import numpy as np
 import array
 import jax
 import torch
+from jax.experimental import mesh_utils
+from jax.sharding import PositionalSharding
 from torch.nn.functional import pad
 from torch.utils.data import DataLoader
 from transformers import FlaxAutoModelForCausalLM, AutoTokenizer
@@ -22,7 +24,7 @@ gen_kwargs = {
 class SUT_base():
     def __init__(self, model_path, dtype, dataset_path, max_examples, do_init=False):
         # TODO : Pass model file name to init instead of args
-        print("Loading PyTorch model...")
+        print("Loading JAX model...")
         self.model_name = "EleutherAI/gpt-j-6B"
         self.dataset_path = dataset_path
         self.model_path = model_path
@@ -35,11 +37,35 @@ class SUT_base():
         else:
             self.dtype = jax.numpy.float32
 
-        self.model = FlaxAutoModelForCausalLM.from_pretrained(
+        self.model, self.params = FlaxAutoModelForCausalLM.from_pretrained(
             self.model_path,
             dtype=self.dtype,
             _do_init=do_init
         )
+        print("finish from_pretrained")
+        self.params = self.model.to_bf16(self.params)
+        print("finish bf16 cast")
+        n_devices = len(jax.devices())
+        print("n devices", n_devices)
+        # Use a simple sharding scheme to just fit the model.
+        devices = mesh_utils.create_device_mesh((n_devices, 1))
+        sharding = PositionalSharding(devices)
+
+        def put_sharded(v):
+              return jax.device_put(v, sharding.reshape(1, n_devices))
+        
+        self.params["transformer"]["h"] = jax.tree_util.tree_map(
+                    put_sharded, self.params["transformer"]["h"]
+                    )
+        self.params["lm_head"] = jax.device_put(
+                    self.params["lm_head"], sharding.replicate(axis=0, keepdims=True)
+                    )
+        self.params["transformer"]["ln_f"] = jax.device_put(
+                    self.params["transformer"]["ln_f"], sharding.replicate(axis=0, keepdims=True)
+                    )
+        self.params["transformer"]["wte"] = jax.device_put(
+                    self.params["transformer"]["wte"], sharding.replicate(axis=0, keepdims=True)
+                    )
 
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.model_name,
@@ -49,11 +75,26 @@ class SUT_base():
         self.tokenizer.pad_token = self.tokenizer.eos_token
 
         self.data_object = Dataset(
-            self.dataset_path, total_count_override=max_examples)
+            self.dataset_path, total_count_override=max_examples, framework="jax")
         self.qsl = lg.ConstructQSL(self.data_object.count, self.data_object.perf_count,
                                    self.data_object.LoadSamplesToRam, self.data_object.UnloadSamplesFromRam)
 
         self.sut = lg.ConstructSUT(self.issue_queries, self.flush_queries)
+
+        # warmup
+        from functools import partial
+        @partial(jax.jit, static_argnums=[2, 3, 4, 5])
+        def generator(input_batch, params, early_stopping, max_new_tokens, min_new_tokens, num_beams):
+            return self.model.generate(**input_batch, max_new_tokens=max_new_tokens, min_new_tokens=min_new_tokens, num_beams=num_beams, early_stopping=early_stopping, pad_token_id=self.tokenizer.eos_token_id, params=params)
+
+        self.generator_compiled = generator
+        attention_mask = self.data_object.source_encoded_attn_masks[0]
+        input_id = self.data_object.source_encoded_input_ids[0]
+        input_batch={'input_ids':input_id,'attention_mask':attention_mask}
+        s = time.time()
+        out = self.generator_compiled(input_batch=input_batch,params=self.params, early_stopping=True, max_new_tokens=128, min_new_tokens=30, num_beams=4)
+        print("compile time ", time.time() - s)
+
 
     def issue_queries(self, query_samples):
         print("Number of Samples in query_samples : ", len(query_samples))
