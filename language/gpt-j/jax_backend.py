@@ -22,13 +22,13 @@ gen_kwargs = {
 
 
 class SUT_base():
-    def __init__(self, model_path, dtype, dataset_path, max_examples, do_init=False):
+    def __init__(self, model_path, dtype, dataset_path, max_examples, do_init=False, from_pt=False, bf16_weights=False):
         # TODO : Pass model file name to init instead of args
         print("Loading JAX model...")
         self.model_name = "EleutherAI/gpt-j-6B"
         self.dataset_path = dataset_path
         self.model_path = model_path
-        # dtype
+        # dtype of activations
         if dtype == 'bfloat16':
             self.dtype = jax.numpy.bfloat16
             print("BF16 autocast")
@@ -36,15 +36,17 @@ class SUT_base():
             self.dtype = jax.numpy.float16
         else:
             self.dtype = jax.numpy.float32
-
+        print("do_init", do_init, "from_pt", from_pt, "bf16_weights", bf16_weights)
         self.model, self.params = FlaxAutoModelForCausalLM.from_pretrained(
             self.model_path,
             dtype=self.dtype,
-            _do_init=do_init
+            from_pt=from_pt,
+            _do_init=do_init if not from_pt else True
         )
         print("finish from_pretrained")
-        self.params = self.model.to_bf16(self.params)
-        print("finish bf16 cast")
+        if bf16_weights:
+            self.params = self.model.to_bf16(self.params)
+            print("finish bf16 cast")
         n_devices = len(jax.devices())
         print("n devices", n_devices, jax.devices())
         # Use a simple sharding scheme to just fit the model.
@@ -154,15 +156,15 @@ class SUT_base():
 
 
 class SUT_Offline(SUT_base):
-    def __init__(self, model_path, dtype, dataset_path, max_examples, do_init):
-        SUT_base.__init__(self, model_path, dtype, dataset_path, max_examples, do_init)
+    def __init__(self, model_path, dtype, dataset_path, max_examples, do_init, from_pt, bf16_weights):
+        SUT_base.__init__(self, model_path, dtype, dataset_path, max_examples, do_init, from_pt, bf16_weights)
     '''IssueQuery and inference methods implemented in Base class'''
 
 
 class SUT_Server(SUT_base):
-    def __init__(self, model_path, dtype, dataset_path, max_examples, do_init):
+    def __init__(self, model_path, dtype, dataset_path, max_examples, do_init, from_pt, bf16_weights):
 
-        SUT_base.__init__(self, model_path, dtype, dataset_path, max_examples, do_init)
+        SUT_base.__init__(self, model_path, dtype, dataset_path, max_examples, do_init, from_pt, bf16_weights)
         self.total_samples_done = 0
         self.sut = lg.ConstructSUT(self.issue_queries, self.flush_queries)
         print("SUT Server")
@@ -186,8 +188,8 @@ class SUT_Server(SUT_base):
 
 
 class SUT_SingleStream(SUT_base):
-    def __init__(self, model_path, dtype, dataset_path, max_examples, do_init):
-        SUT_base.__init__(self, model_path, dtype, dataset_path, max_examples, do_init)
+    def __init__(self, model_path, dtype, dataset_path, max_examples, do_init, from_pt, bf16_weights):
+        SUT_base.__init__(self, model_path, dtype, dataset_path, max_examples, do_init, from_pt, bf16_weights)
         self.sut = lg.ConstructSUT(self.issue_queries, self.flush_queries)
         self.total_samples_done = 0
 
@@ -209,10 +211,10 @@ class SUT_SingleStream(SUT_base):
             print("Completed : ", self.total_samples_done)
 
 
-def get_SUT(model_path, scenario, dtype, dataset_path, max_examples, do_init=False):
+def get_SUT(model_path, scenario, dtype, dataset_path, max_examples, do_init=False, from_pt=False, bf16_weights=False):
     if scenario == "Offline":
-        return SUT_Offline(model_path, dtype, dataset_path, max_examples, do_init)
+        return SUT_Offline(model_path, dtype, dataset_path, max_examples, do_init, from_pt, bf16_weights)
     elif scenario == "Server":
-        return SUT_Server(model_path, dtype, dataset_path, max_examples, do_init)
+        return SUT_Server(model_path, dtype, dataset_path, max_examples, do_init, from_pt, bf16_weights)
     elif scenario == "SingleStream":
-        return SUT_SingleStream(model_path, dtype, dataset_path, max_examples, do_init)
+        return SUT_SingleStream(model_path, dtype, dataset_path, max_examples, do_init, from_pt, bf16_weights)

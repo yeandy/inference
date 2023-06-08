@@ -34,6 +34,8 @@ def get_args():
     parser.add_argument("--max_examples", type=int, default=13368,
                         help="Maximum number of examples to consider (not limited by default)")
     parser.add_argument("--jax_do_init", action="store_true", help="If True, initialize model's weights automatically")
+    parser.add_argument("--jax_from_pt", action="store_true", help="If True, load JAX model from torch checkpoint")
+    parser.add_argument("--jax_bf16_weights", action="store_true", help="If True, set data type of weights to bf16")
     args = parser.parse_args()
     return args
 
@@ -66,6 +68,8 @@ def main():
             dataset_path=args.dataset_path,
             max_examples=args.max_examples,
             do_init=args.jax_do_init,
+            from_pt=args.jax_from_pt,
+            bf16_weights=args.jax_bf16_weights,
         )
     else:
         raise Exception(f'Implementation for {args.backend} is not defined')
