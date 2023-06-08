@@ -46,7 +46,7 @@ class SUT_base():
         self.params = self.model.to_bf16(self.params)
         print("finish bf16 cast")
         n_devices = len(jax.devices())
-        print("n devices", n_devices)
+        print("n devices", n_devices, jax.devices())
         # Use a simple sharding scheme to just fit the model.
         devices = mesh_utils.create_device_mesh((n_devices, 1))
         sharding = PositionalSharding(devices)
@@ -94,6 +94,11 @@ class SUT_base():
         s = time.time()
         out = self.generator_compiled(input_batch=input_batch,params=self.params, early_stopping=True, max_new_tokens=128, min_new_tokens=30, num_beams=4)
         print("compile time ", time.time() - s)
+        s = time.time()
+        out = self.generator_compiled(input_batch=input_batch,params=self.params, early_stopping=True, max_new_tokens=128, min_new_tokens=30, num_beams=4)
+        out = np.array(out.sequences)
+        print("second time ", time.time() - s)
+
 
 
     def issue_queries(self, query_samples):
@@ -107,10 +112,10 @@ class SUT_base():
             index = query_samples[i].index
             input_ids_tensor = self.data_object.source_encoded_input_ids[index]
             input_masks_tensor = self.data_object.source_encoded_attn_masks[index]
-
-            pred_output_batch = self.inference_call(
-                input_ids_tensor, input_masks_tensor).cpu().numpy()
-
+            s = time.time()
+            pred_output_batch = np.array(self.inference_call(
+                input_ids_tensor, input_masks_tensor))
+            print(time.time()-s)
             response_array = array.array("B", pred_output_batch[0].tobytes())
             bi = response_array.buffer_info()
             response = [lg.QuerySampleResponse(
@@ -126,8 +131,8 @@ class SUT_base():
         input_batch['input_ids'] = input_ids_tensor
         input_batch['attention_mask'] = input_masks_tensor
 
-        output_batch = self.model.generate(
-            **input_batch, **gen_kwargs, pad_token_id=self.tokenizer.eos_token_id)
+        output_batch = self.generator_compiled(
+            input_batch=input_batch,params=self.params,early_stopping=True, max_new_tokens=128, min_new_tokens=30, num_beams=4).sequences
 
         input_batch_lengths = [x.shape[0]
                                for x in input_batch["input_ids"]]
@@ -138,8 +143,7 @@ class SUT_base():
         for data, source_len in zip(output_batch, input_batch_lengths):
             output_batch_truncated.append(data[source_len:])
 
-        output_batch_truncated = torch.stack(output_batch_truncated)
-
+        output_batch_truncated = jax.numpy.stack(output_batch_truncated)
         return output_batch_truncated
 
     def flush_queries(self):
@@ -168,10 +172,10 @@ class SUT_Server(SUT_base):
         index = query_samples[0].index
         input_ids_tensor = self.data_object.source_encoded_input_ids[index]
         input_masks_tensor = self.data_object.source_encoded_attn_masks[index]
-
-        pred_output_batch = self.inference_call(
-            input_ids_tensor, input_masks_tensor).cpu().numpy()
-
+        s = time.time()
+        pred_output_batch = np.array(self.inference_call(
+            input_ids_tensor, input_masks_tensor))
+        print(time.time()-s)
         response_array = array.array("B", pred_output_batch.tobytes())
         bi = response_array.buffer_info()
         responses = [lg.QuerySampleResponse(query_samples[0].id, bi[0], bi[1])]
@@ -192,10 +196,10 @@ class SUT_SingleStream(SUT_base):
         index = query_samples[0].index
         input_ids_tensor = self.data_object.source_encoded_input_ids[index]
         input_masks_tensor = self.data_object.source_encoded_attn_masks[index]
-
-        pred_output_batch = self.inference_call(
-            input_ids_tensor, input_masks_tensor).cpu().numpy()
-
+        s = time.time()
+        pred_output_batch = np.array(self.inference_call(
+            input_ids_tensor, input_masks_tensor))
+        print(time.time()-s)
         response_array = array.array("B", pred_output_batch.tobytes())
         bi = response_array.buffer_info()
         responses = [lg.QuerySampleResponse(query_samples[0].id, bi[0], bi[1])]

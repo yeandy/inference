@@ -66,7 +66,7 @@ class Dataset():
 
         for i in range(total_samples):
             source_encoded = self.tokenizer(self.sources[i], return_tensors=framework,
-                                            padding=True, truncation=True,
+                                            padding='max_length', truncation=True,
                                             max_length=1919)
             source_encoded_input_ids.append(source_encoded.input_ids)
             source_encoded_attn_masks.append(source_encoded.attention_mask)
