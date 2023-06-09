@@ -65,12 +65,14 @@ class Dataset():
         source_encoded_attn_masks = []
 
         for i in range(total_samples):
+            if i%1000==0:
+                print(i)
             source_encoded = self.tokenizer(self.sources[i], return_tensors=framework,
                                             padding='max_length', truncation=True,
                                             max_length=1919)
             source_encoded_input_ids.append(source_encoded.input_ids)
             source_encoded_attn_masks.append(source_encoded.attention_mask)
-
+        print("done encoding")
         return source_encoded_input_ids, source_encoded_attn_masks
 
     def LoadSamplesToRam(self, sample_list):

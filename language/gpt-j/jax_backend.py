@@ -31,7 +31,7 @@ class SUT_base():
         # dtype of activations
         if dtype == 'bfloat16':
             self.dtype = jax.numpy.bfloat16
-            print("BF16 autocast")
+            print("BF16 activations")
         elif dtype == 'float16':
             self.dtype = jax.numpy.float16
         else:
@@ -47,6 +47,11 @@ class SUT_base():
         if bf16_weights:
             self.params = self.model.to_bf16(self.params)
             print("finish bf16 cast")
+            print(self.params)
+        else:
+            self.params = self.model.to_fp32(self.params)
+            print("finish fp32 cast")
+            print(self.params)
         n_devices = len(jax.devices())
         print("n devices", n_devices, jax.devices())
         # Use a simple sharding scheme to just fit the model.
