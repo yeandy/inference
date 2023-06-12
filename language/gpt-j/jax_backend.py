@@ -12,14 +12,24 @@ from transformers import FlaxAutoModelForCausalLM, AutoTokenizer
 import mlperf_loadgen as lg
 from dataset import Dataset
 
-
+"""
+# beam
 gen_kwargs = {
     "early_stopping": True,
     "max_new_tokens": 128,
     "min_new_tokens": 30,
     "num_beams": 4,
 }
-
+"""
+#"""
+# greedy
+gen_kwargs = {
+    "early_stopping": False,
+    "max_new_tokens": 128,
+    "min_new_tokens": 30,
+    "num_beams": 1,
+}
+#"""
 
 class SUT_base():
     def __init__(self, model_path, dtype, dataset_path, max_examples, do_init=False, from_pt=False, bf16_weights=False):
@@ -83,12 +93,14 @@ class SUT_base():
 
         self.data_object = Dataset(
             self.dataset_path, total_count_override=max_examples, framework="jax")
+        
         self.qsl = lg.ConstructQSL(self.data_object.count, self.data_object.perf_count,
                                    self.data_object.LoadSamplesToRam, self.data_object.UnloadSamplesFromRam)
 
         self.sut = lg.ConstructSUT(self.issue_queries, self.flush_queries)
 
         # warmup
+        print("Compiling model. Generation args", gen_kwargs)
         from functools import partial
         @partial(jax.jit, static_argnums=[2, 3, 4, 5])
         def generator(input_batch, params, early_stopping, max_new_tokens, min_new_tokens, num_beams):
@@ -98,13 +110,16 @@ class SUT_base():
         attention_mask = self.data_object.source_encoded_attn_masks[0]
         input_id = self.data_object.source_encoded_input_ids[0]
         input_batch={'input_ids':input_id,'attention_mask':attention_mask}
+
+        print("Running first inference")
         s = time.time()
-        out = self.generator_compiled(input_batch=input_batch,params=self.params, early_stopping=True, max_new_tokens=128, min_new_tokens=30, num_beams=4)
-        print("compile time ", time.time() - s)
+        out = self.generator_compiled(input_batch=input_batch,params=self.params, early_stopping=gen_kwargs['early_stopping'], max_new_tokens=gen_kwargs['max_new_tokens'], min_new_tokens=gen_kwargs['min_new_tokens'], num_beams=gen_kwargs['num_beams'])
+        print("First time ", time.time() - s)
+        print("Running second inference")
         s = time.time()
-        out = self.generator_compiled(input_batch=input_batch,params=self.params, early_stopping=True, max_new_tokens=128, min_new_tokens=30, num_beams=4)
+        out = self.generator_compiled(input_batch=input_batch,params=self.params, early_stopping=gen_kwargs['early_stopping'], max_new_tokens=gen_kwargs['max_new_tokens'], min_new_tokens=gen_kwargs['min_new_tokens'], num_beams=gen_kwargs['num_beams'])
         out = np.array(out.sequences)
-        print("second time ", time.time() - s)
+        print("Second time ", time.time() - s)
 
 
 
@@ -139,7 +154,7 @@ class SUT_base():
         input_batch['attention_mask'] = input_masks_tensor
 
         output_batch = self.generator_compiled(
-            input_batch=input_batch,params=self.params,early_stopping=True, max_new_tokens=128, min_new_tokens=30, num_beams=4).sequences
+            input_batch=input_batch,params=self.params,early_stopping=gen_kwargs['early_stopping'], max_new_tokens=gen_kwargs['max_new_tokens'], min_new_tokens=gen_kwargs['min_new_tokens'], num_beams=gen_kwargs['num_beams']).sequences
 
         input_batch_lengths = [x.shape[0]
                                for x in input_batch["input_ids"]]
@@ -179,10 +194,10 @@ class SUT_Server(SUT_base):
         index = query_samples[0].index
         input_ids_tensor = self.data_object.source_encoded_input_ids[index]
         input_masks_tensor = self.data_object.source_encoded_attn_masks[index]
-        s = time.time()
+        #s = time.time()
         pred_output_batch = np.array(self.inference_call(
             input_ids_tensor, input_masks_tensor))
-        print(time.time()-s)
+        #print(time.time()-s)
         response_array = array.array("B", pred_output_batch.tobytes())
         bi = response_array.buffer_info()
         responses = [lg.QuerySampleResponse(query_samples[0].id, bi[0], bi[1])]
@@ -203,10 +218,10 @@ class SUT_SingleStream(SUT_base):
         index = query_samples[0].index
         input_ids_tensor = self.data_object.source_encoded_input_ids[index]
         input_masks_tensor = self.data_object.source_encoded_attn_masks[index]
-        s = time.time()
+        #s = time.time()
         pred_output_batch = np.array(self.inference_call(
             input_ids_tensor, input_masks_tensor))
-        print(time.time()-s)
+        #print(time.time()-s)
         response_array = array.array("B", pred_output_batch.tobytes())
         bi = response_array.buffer_info()
         responses = [lg.QuerySampleResponse(query_samples[0].id, bi[0], bi[1])]
