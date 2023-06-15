@@ -12,7 +12,7 @@ from transformers import FlaxAutoModelForCausalLM, AutoTokenizer
 import mlperf_loadgen as lg
 from dataset import Dataset
 
-"""
+#"""
 # beam
 gen_kwargs = {
     "early_stopping": True,
@@ -20,8 +20,8 @@ gen_kwargs = {
     "min_new_tokens": 30,
     "num_beams": 4,
 }
-"""
 #"""
+"""
 # greedy
 gen_kwargs = {
     "early_stopping": False,
@@ -29,7 +29,7 @@ gen_kwargs = {
     "min_new_tokens": 30,
     "num_beams": 1,
 }
-#"""
+"""
 
 class SUT_base():
     def __init__(self, model_path, dtype, dataset_path, max_examples, do_init=False, from_pt=False, bf16_weights=False):
@@ -218,10 +218,10 @@ class SUT_SingleStream(SUT_base):
         index = query_samples[0].index
         input_ids_tensor = self.data_object.source_encoded_input_ids[index]
         input_masks_tensor = self.data_object.source_encoded_attn_masks[index]
-        #s = time.time()
+        s = time.time()
         pred_output_batch = np.array(self.inference_call(
             input_ids_tensor, input_masks_tensor))
-        #print(time.time()-s)
+        print(time.time()-s)
         response_array = array.array("B", pred_output_batch.tobytes())
         bi = response_array.buffer_info()
         responses = [lg.QuerySampleResponse(query_samples[0].id, bi[0], bi[1])]
