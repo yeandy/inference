@@ -67,7 +67,7 @@ def main():
         qsl_idx = pred['qsl_idx']
         target = targets[qsl_idx]
         target_required.append(target)
-        preds_token_ids.append(np.frombuffer(bytes.fromhex(pred['data']), np.int64))
+        preds_token_ids.append(np.frombuffer(bytes.fromhex(pred['data']), np.int32))
 
 
     preds_decoded_text = tokenizer.batch_decode(preds_token_ids, skip_special_tokens=True)

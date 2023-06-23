@@ -26,7 +26,7 @@ PROMPT_DICT = {
 
 
 class Dataset():
-    def __init__(self, dataset_path, batch_size=1, pad_val=1, pad_max=196, total_count_override=None, perf_count_override=None):
+    def __init__(self, dataset_path, batch_size=1, pad_val=1, pad_max=196, total_count_override=None, perf_count_override=None, framework="pt"):
         print("Constructing QSL")
 
         self.dataset = "cnn_dailymail"
@@ -51,12 +51,12 @@ class Dataset():
         self.targets = [
             f"{example['output']}" for example in self.list_data_dict]
 
-        self.source_encoded_input_ids, self.source_encoded_attn_masks = self.encode_samples()
+        self.source_encoded_input_ids, self.source_encoded_attn_masks = self.encode_samples(framework=framework)
 
         self.count = total_count_override or len(self.sources)
         self.perf_count = perf_count_override or self.count
 
-    def encode_samples(self):
+    def encode_samples(self, framework="pt"):
         print("Encoding Samples")
 
         total_samples = len(self.sources)
@@ -65,12 +65,14 @@ class Dataset():
         source_encoded_attn_masks = []
 
         for i in range(total_samples):
-            source_encoded = self.tokenizer(self.sources[i], return_tensors="pt",
-                                            padding=True, truncation=True,
+            if i%1000==0:
+                print(i)
+            source_encoded = self.tokenizer(self.sources[i], return_tensors=framework,
+                                            padding='max_length', truncation=True,
                                             max_length=1919)
             source_encoded_input_ids.append(source_encoded.input_ids)
             source_encoded_attn_masks.append(source_encoded.attention_mask)
-
+        print("done encoding")
         return source_encoded_input_ids, source_encoded_attn_masks
 
     def LoadSamplesToRam(self, sample_list):
