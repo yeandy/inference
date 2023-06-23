@@ -4,6 +4,7 @@ import numpy as np
 import array
 import jax
 import torch
+from jax.config import config
 from jax.experimental import mesh_utils
 from jax.sharding import PositionalSharding
 from torch.nn.functional import pad
@@ -46,6 +47,8 @@ class SUT_base():
             self.dtype = jax.numpy.float16
         else:
             self.dtype = jax.numpy.float32
+            jax.config.update('jax_default_matmul_precision', 'float32')
+
         print("do_init", do_init, "from_pt", from_pt, "bf16_weights", bf16_weights)
         self.model, self.params = FlaxAutoModelForCausalLM.from_pretrained(
             self.model_path,
@@ -130,6 +133,7 @@ class SUT_base():
         list_prompts_tokens = []
         list_prompts_attn_masks = []
 
+        #jax.profiler.start_trace("/tmp/tensorboard")
         for i in range(len(query_samples)):
             index = query_samples[i].index
             input_ids_tensor = self.data_object.source_encoded_input_ids[index]
@@ -145,6 +149,7 @@ class SUT_base():
             lg.QuerySamplesComplete(response)
             if i % 5 == 0:
                 print("Completed : ", i)
+        #jax.profiler.stop_trace()
 
     def inference_call(self, input_ids_tensor, input_masks_tensor):
         ''' Common for all scenarios '''
